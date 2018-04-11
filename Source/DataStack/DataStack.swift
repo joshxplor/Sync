@@ -76,7 +76,10 @@ import EncryptedCoreData
            try? preloadDB(storeURL)
             
             let options: [String: Any] = [NSMigratePersistentStoresAutomaticallyOption: true, NSInferMappingModelAutomaticallyOption: true, EncryptedStorePassphraseKey: passPhrase, EncryptedStoreDatabaseLocation: storeURL]
-            return EncryptedStore.make(options: options, managedObjectModel: self.model)
+            
+            let store = EncryptedStore.make(options: options, managedObjectModel: self.model)!
+            try? loadResource(storeURL)
+            return store
         }
         return persistentStoreCoordinator
     }()
@@ -92,6 +95,17 @@ import EncryptedCoreData
                 } catch let error as NSError {
                     throw NSError(info: "Oops, could not copy preloaded data", previousError: error)
                 }
+            }
+        }
+    }
+    
+    private func loadResource(_ storeURL: URL) throws {
+        let shouldExcludeSQLiteFromBackup = storeType == .sqLite && TestCheck.isTesting == false
+        if shouldExcludeSQLiteFromBackup {
+            do {
+                try (storeURL as NSURL).setResourceValue(true, forKey: .isExcludedFromBackupKey)
+            } catch let excludingError as NSError {
+                throw NSError(info: "Excluding SQLite file from backup caused an error", previousError: excludingError)
             }
         }
     }
