@@ -69,7 +69,7 @@ import EncryptedCoreData
         if self.storeType == .inMemory {
             try! persistentStoreCoordinator.addPersistentStore(storeType: self.storeType, bundle: self.modelBundle, modelName: self.modelName, storeName: self.storeName, containerURL: self.containerURL)
         } else {
-              let options: [String: Any] = [NSMigratePersistentStoresAutomaticallyOption: true, NSInferMappingModelAutomaticallyOption: true, EncryptedStorePassphraseKey: passPhrase]
+            let options: [String: Any] = [NSMigratePersistentStoresAutomaticallyOption: true, NSInferMappingModelAutomaticallyOption: true, EncryptedStorePassphraseKey: passPhrase, EncryptedStoreDatabaseLocation: self.containerURL]
             return EncryptedStore.make(options: options, managedObjectModel: self.model)
         }
         return persistentStoreCoordinator
