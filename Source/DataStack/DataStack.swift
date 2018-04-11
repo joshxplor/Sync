@@ -71,11 +71,30 @@ import EncryptedCoreData
         } else {
             let filePath = (storeName ?? modelName) + ".sqlite"
             let storeURL = containerURL.appendingPathComponent(filePath)
+            
+            // preload
+           try? preloadDB(storeURL)
+            
             let options: [String: Any] = [NSMigratePersistentStoresAutomaticallyOption: true, NSInferMappingModelAutomaticallyOption: true, EncryptedStorePassphraseKey: passPhrase, EncryptedStoreDatabaseLocation: storeURL]
             return EncryptedStore.make(options: options, managedObjectModel: self.model)
         }
         return persistentStoreCoordinator
     }()
+    
+    private func preloadDB (_ storeURL: URL) throws {
+        let shouldPreloadDatabase = !FileManager.default.fileExists(atPath: storeURL.path)
+        if shouldPreloadDatabase {
+            if let preloadedPath = self.modelBundle.path(forResource: modelName, ofType: "sqlite") {
+                let preloadURL = URL(fileURLWithPath: preloadedPath)
+                
+                do {
+                    try FileManager.default.copyItem(at: preloadURL, to: storeURL)
+                } catch let error as NSError {
+                    throw NSError(info: "Oops, could not copy preloaded data", previousError: error)
+                }
+            }
+        }
+    }
 
     private lazy var disposablePersistentStoreCoordinator: NSPersistentStoreCoordinator = {
         let model = NSManagedObjectModel(bundle: self.modelBundle, name: self.modelName)
