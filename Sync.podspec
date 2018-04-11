@@ -27,5 +27,5 @@ s.requires_arc = true
 s.source_files = 'Source/**/*'
 
 s.frameworks = 'Foundation', 'CoreData'
-s.dependency 'EncryptedCoreData'
+s.dependency 'EncryptedCoreData', :git => 'https://github.com/project-imas/encrypted-core-data.git'
 end
