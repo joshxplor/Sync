@@ -30,7 +30,7 @@ import EncryptedCoreData
 
     private let backgroundContextName = "DataStack.backgroundContextName"
     
-    private var passPhrase: String = "!XpL0r-D/3-k3y9_8^73^2_1=0p3|V"
+    private var passPhrase: String = "dbEncrypt101"
 
     /**
      The context for the main queue. Please do not use this to mutate data, use `performInNewBackgroundContext`
