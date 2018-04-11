@@ -27,4 +27,5 @@ s.requires_arc = true
 s.source_files = 'Source/**/*'
 
 s.frameworks = 'Foundation', 'CoreData'
+s.dependency 'EncryptedCoreData'
 end
