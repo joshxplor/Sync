@@ -1,5 +1,6 @@
 import Foundation
 import CoreData
+import EncryptedCoreData
 
 @objc public enum DataStackStoreType: Int {
     case inMemory, sqLite
@@ -28,6 +29,8 @@ import CoreData
     private var containerURL = URL.directoryURL()
 
     private let backgroundContextName = "DataStack.backgroundContextName"
+    
+    private var passPhrase: String = "dbEncrypt101"
 
     /**
      The context for the main queue. Please do not use this to mutate data, use `performInNewBackgroundContext`
@@ -63,10 +66,49 @@ import CoreData
 
     @objc public private(set) lazy var persistentStoreCoordinator: NSPersistentStoreCoordinator = {
         let persistentStoreCoordinator = NSPersistentStoreCoordinator(managedObjectModel: self.model)
-        try! persistentStoreCoordinator.addPersistentStore(storeType: self.storeType, bundle: self.modelBundle, modelName: self.modelName, storeName: self.storeName, containerURL: self.containerURL)
-
+        if self.storeType == .inMemory {
+            try! persistentStoreCoordinator.addPersistentStore(storeType: self.storeType, bundle: self.modelBundle, modelName: self.modelName, storeName: self.storeName, containerURL: self.containerURL)
+        } else {
+            let filePath = (storeName ?? modelName) + ".sqlite"
+            let storeURL = containerURL.appendingPathComponent(filePath)
+            
+            // preload
+           try? preloadDB(storeURL)
+            
+            let options: [String: Any] = [NSMigratePersistentStoresAutomaticallyOption: true, NSInferMappingModelAutomaticallyOption: true, EncryptedStorePassphraseKey: passPhrase, EncryptedStoreDatabaseLocation: storeURL]
+            
+            let store = EncryptedStore.make(options: options, managedObjectModel: self.model)!
+            try? loadResource(storeURL)
+            return store
+        }
         return persistentStoreCoordinator
     }()
+    
+    private func preloadDB (_ storeURL: URL) throws {
+        let shouldPreloadDatabase = !FileManager.default.fileExists(atPath: storeURL.path)
+        if shouldPreloadDatabase {
+            if let preloadedPath = self.modelBundle.path(forResource: modelName, ofType: "sqlite") {
+                let preloadURL = URL(fileURLWithPath: preloadedPath)
+                
+                do {
+                    try FileManager.default.copyItem(at: preloadURL, to: storeURL)
+                } catch let error as NSError {
+                    throw NSError(info: "Oops, could not copy preloaded data", previousError: error)
+                }
+            }
+        }
+    }
+    
+    private func loadResource(_ storeURL: URL) throws {
+        let shouldExcludeSQLiteFromBackup = storeType == .sqLite && TestCheck.isTesting == false
+        if shouldExcludeSQLiteFromBackup {
+            do {
+                try (storeURL as NSURL).setResourceValue(true, forKey: .isExcludedFromBackupKey)
+            } catch let excludingError as NSError {
+                throw NSError(info: "Excluding SQLite file from backup caused an error", previousError: excludingError)
+            }
+        }
+    }
 
     private lazy var disposablePersistentStoreCoordinator: NSPersistentStoreCoordinator = {
         let model = NSManagedObjectModel(bundle: self.modelBundle, name: self.modelName)
@@ -89,30 +131,50 @@ import CoreData
 
         super.init()
     }
+    /**
+     Initializes a DataStack using the bundle name as the model name, so if your target is called ModernApp,
+     it will look for a ModernApp.xcdatamodeld.
 
+     with an optional passphrase to encrypt the data
+    */
+    @objc public init(_ passPhrase: String? = nil) {
+        let bundle = Bundle.main
+        if let bundleName = bundle.infoDictionary?["CFBundleName"] as? String {
+            self.modelName = bundleName
+        }
+        self.model = NSManagedObjectModel(bundle: self.modelBundle, name: self.modelName)
+        
+        super.init()
+        self.updatePassPhrase(passPhrase)
+    }
     /**
      Initializes a DataStack using the provided model name.
      - parameter modelName: The name of your Core Data model (xcdatamodeld).
+     - parameter passPhrase: The key to encrypt the database, if not provided it will use the default key
      */
-    @objc public init(modelName: String) {
+    @objc public init(modelName: String, passPhrase: String? = nil) {
         self.modelName = modelName
         self.model = NSManagedObjectModel(bundle: self.modelBundle, name: self.modelName)
 
         super.init()
+        updatePassPhrase(passPhrase)
     }
 
     /**
      Initializes a DataStack using the provided model name, bundle and storeType.
      - parameter modelName: The name of your Core Data model (xcdatamodeld).
      - parameter storeType: The store type to be used, you have .InMemory and .SQLite, the first one is memory
+     - parameter passPhrase: The key to encrypt the database, if not provided it will use the default key
      based and doesn't save to disk, while the second one creates a .sqlite file and stores things there.
      */
-    @objc public init(modelName: String, storeType: DataStackStoreType) {
+    @objc public init(modelName: String, storeType: DataStackStoreType, passPhrase: String? = nil) {
         self.modelName = modelName
         self.storeType = storeType
         self.model = NSManagedObjectModel(bundle: self.modelBundle, name: self.modelName)
 
         super.init()
+        
+        updatePassPhrase(passPhrase)
     }
 
     /**
@@ -122,15 +184,17 @@ import CoreData
      the main bundle but when using unit tests sometimes your Core Data model could be located where your tests
      are located.
      - parameter storeType: The store type to be used, you have .InMemory and .SQLite, the first one is memory
+     - parameter passPhrase: The key to encrypt the database, if not provided it will use the default key
      based and doesn't save to disk, while the second one creates a .sqlite file and stores things there.
      */
-    @objc public init(modelName: String, bundle: Bundle, storeType: DataStackStoreType) {
+    @objc public init(modelName: String, bundle: Bundle, storeType: DataStackStoreType, passPhrase: String? = nil) {
         self.modelName = modelName
         self.modelBundle = bundle
         self.storeType = storeType
         self.model = NSManagedObjectModel(bundle: self.modelBundle, name: self.modelName)
 
         super.init()
+        updatePassPhrase(passPhrase)
     }
 
     /**
@@ -144,8 +208,9 @@ import CoreData
      - parameter storeName: Normally your file would be named as your model name is named, so if your model
      name is AwesomeApp then the .sqlite file will be named AwesomeApp.sqlite, this attribute allows your to
      change that.
+     - parameter passPhrase: The key to encrypt the database, if not provided it will use the default key
      */
-    @objc public init(modelName: String, bundle: Bundle, storeType: DataStackStoreType, storeName: String) {
+    @objc public init(modelName: String, bundle: Bundle, storeType: DataStackStoreType, storeName: String, passPhrase: String? = nil) {
         self.modelName = modelName
         self.modelBundle = bundle
         self.storeType = storeType
@@ -153,6 +218,7 @@ import CoreData
         self.model = NSManagedObjectModel(bundle: self.modelBundle, name: self.modelName)
 
         super.init()
+        updatePassPhrase(passPhrase)
     }
 
     /**
@@ -167,8 +233,9 @@ import CoreData
      name is AwesomeApp then the .sqlite file will be named AwesomeApp.sqlite, this attribute allows your to
      change that.
      - parameter containerURL: The container URL for the sqlite file when a store type of SQLite is used.
+     - parameter passPhrase: The key to encrypt the database, if not provided it will use the default key
      */
-    @objc public init(modelName: String, bundle: Bundle, storeType: DataStackStoreType, storeName: String, containerURL: URL) {
+    @objc public init(modelName: String, bundle: Bundle, storeType: DataStackStoreType, storeName: String, containerURL: URL, passPhrase: String? = nil) {
         self.modelName = modelName
         self.modelBundle = bundle
         self.storeType = storeType
@@ -177,6 +244,7 @@ import CoreData
         self.model = NSManagedObjectModel(bundle: self.modelBundle, name: self.modelName)
 
         super.init()
+        updatePassPhrase(passPhrase)
     }
 
     /**
@@ -184,8 +252,9 @@ import CoreData
      - parameter model: The model that we'll use to set up your DataStack.
      - parameter storeType: The store type to be used, you have .InMemory and .SQLite, the first one is memory
      based and doesn't save to disk, while the second one creates a .sqlite file and stores things there.
+     - parameter passPhrase: The key to encrypt the database, if not provided it will use the default key
      */
-    @objc public init(model: NSManagedObjectModel, storeType: DataStackStoreType) {
+    @objc public init(model: NSManagedObjectModel, storeType: DataStackStoreType, passPhrase: String? = nil) {
         self.model = model
         self.storeType = storeType
 
@@ -195,6 +264,7 @@ import CoreData
         }
 
         super.init()
+        updatePassPhrase(passPhrase)
     }
 
     deinit {
@@ -309,6 +379,14 @@ import CoreData
                 }
             }
         }
+    }
+    
+    private func updatePassPhrase(_ newPassPhrase: String? = nil) {
+        guard let newPass = newPassPhrase, newPassPhrase?.isEmpty == false else {
+            // use the default passphrase if nothing is set
+            return
+        }
+        passPhrase = newPass
     }
 
     // Required for iOS 8 Compatibility.
