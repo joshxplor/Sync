@@ -53,7 +53,11 @@ extension NSManagedObject {
                 if let localPrimaryKey = children, localPrimaryKey is Array < String> || localPrimaryKey is Array < Int> || localPrimaryKey is NSNull {
                     sync_toManyRelationshipUsingIDsInsteadOfDictionary(relationship, localPrimaryKey: localPrimaryKey)
                 } else {
-                    try! sync_toManyRelationship(relationship, dictionary: dictionary, parent: parent, parentRelationship: parentRelationship, context: context, operations: operations, shouldContinueBlock: shouldContinueBlock, objectJSONBlock: objectJSONBlock)
+                    do {
+                        try sync_toManyRelationship(relationship, dictionary: dictionary, parent: parent, parentRelationship: parentRelationship, context: context, operations: operations, shouldContinueBlock: shouldContinueBlock, objectJSONBlock: objectJSONBlock)
+                    } catch {
+                        print(error)
+                    }
                 }
             } else {
                 var destinationIsParentSuperEntity = false
