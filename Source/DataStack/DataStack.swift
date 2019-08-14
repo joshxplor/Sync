@@ -494,7 +494,7 @@ extension NSPersistentStoreCoordinator {
         case .sqLite:
             let storeURL = containerURL.appendingPathComponent(filePath)
             let storePath = storeURL.path
-
+            
             let shouldPreloadDatabase = !FileManager.default.fileExists(atPath: storePath)
             if shouldPreloadDatabase {
                 if let preloadedPath = bundle.path(forResource: modelName, ofType: "sqlite") {
@@ -503,6 +503,7 @@ extension NSPersistentStoreCoordinator {
                     do {
                         try FileManager.default.copyItem(at: preloadURL, to: storeURL)
                     } catch let error as NSError {
+                        NotificationCenter.default.post(name: Notification.Name("sqlite-file-404"), object: nil, userInfo: ["error": error])
                         throw NSError(info: "Oops, could not copy preloaded data", previousError: error)
                     }
                 }
@@ -517,6 +518,7 @@ extension NSPersistentStoreCoordinator {
                     do {
                         try self.addPersistentStore(ofType: NSSQLiteStoreType, configurationName: nil, at: storeURL, options: options)
                     } catch let addPersistentError as NSError {
+                        NotificationCenter.default.post(name: Notification.Name("sqlite-file-404"), object: nil, userInfo: ["error": error])
                         throw NSError(info: "There was an error creating the persistentStoreCoordinator", previousError: addPersistentError)
                     }
                 } catch let removingError as NSError {
@@ -578,6 +580,13 @@ extension FileManager {
         if TestCheck.isTesting {
             return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).last!
         } else {
+            if let path = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).last {
+                do {
+                    try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true, attributes: nil)
+                } catch {
+                    NotificationCenter.default.post(name: Notification.Name("document-dir-404"), object: nil, userInfo: ["error": error])
+                }
+            }
             return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).last!
         }
         #endif
